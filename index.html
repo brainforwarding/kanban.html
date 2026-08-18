@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>board</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2314131A'/><rect x='9' y='7' width='6' height='18' rx='1.5' fill='%23FFB454'/><rect x='18' y='7' width='6' height='11' rx='1.5' fill='%235B5768'/></svg>">
+</head>
+<body>
+
+<header class="rail">
+  <div class="brand"><span class="blink"></span>board</div>
+
+  <div class="filters" id="filters"></div>
+
+  <div class="tools">
+    <label class="search" id="searchWrap">
+      <input id="q" type="text" placeholder="Search" spellcheck="false" autocomplete="off">
+    </label>
+    <button class="icon" id="reportBtn" title="Weekly report &nbsp;R"></button>
+    <button class="icon" id="newTask" title="New task &nbsp;N"></button>
+    <button class="icon" id="menuBtn" title="More"></button>
+  </div>
+</header>
+
+<main class="board" id="board"></main>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<!-- task editor -->
+<section class="sheet" id="editor" hidden role="dialog" aria-modal="true" aria-label="Task">
+  <div class="sheet-body">
+    <textarea id="f-title" class="f-title" rows="1" placeholder="What needs doing?" spellcheck="false"></textarea>
+    <div class="seg" id="f-stage"></div>
+    <textarea id="f-notes" class="f-notes" rows="3" placeholder="Notes"></textarea>
+
+    <div class="field">
+      <span class="lbl">Project</span>
+      <div class="chooser" id="f-project"></div>
+    </div>
+
+    <div class="field">
+      <span class="lbl">Session</span>
+      <div class="cmd-input" id="f-session-wrap">
+        <span class="caret">&#9656;</span>
+        <input id="f-session" type="text" spellcheck="false" autocomplete="off" placeholder="claude --resume 2d2bb76b-…">
+        <button class="icon sm" id="f-session-copy" title="Copy"></button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="sheet-foot">
+    <button class="ghost" id="f-archive">Archive</button>
+    <span class="grow"></span>
+    <button class="primary" id="f-save">Save</button>
+  </footer>
+</section>
+
+<!-- weekly report -->
+<section class="sheet wide" id="report" hidden role="dialog" aria-modal="true" aria-label="Weekly report">
+  <header class="rep-head">
+    <div>
+      <button class="wk" id="rep-week" aria-haspopup="true">
+        <span id="rep-label"></span>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg>
+      </button>
+      <p class="rep-sum" id="rep-sum"></p>
+    </div>
+    <span class="grow"></span>
+    <button class="icon sm" id="rep-prev" title="Previous week"></button>
+    <button class="icon sm" id="rep-next" title="Next week"></button>
+    <button class="icon sm gap" id="rep-close" title="Close"></button>
+  </header>
+
+  <div class="rep-body" id="rep-body"></div>
+
+  <footer class="sheet-foot">
+    <button class="ghost" id="rep-all">Select all</button>
+    <span class="count" id="rep-count"></span>
+    <span class="grow"></span>
+    <button class="ghost" id="rep-copy">Copy markdown</button>
+    <button class="primary" id="rep-save">Download .md</button>
+  </footer>
+</section>
+
+<div class="menu weeks" id="weeks" hidden></div>
+
+<!-- projects -->
+<aside class="panel" id="projects" hidden role="dialog" aria-modal="true" aria-label="Projects">
+  <header class="panel-head">
+    <h2>Projects</h2>
+    <button class="icon" data-close></button>
+  </header>
+  <div class="panel-body" id="proj-list"></div>
+  <form class="panel-foot" id="proj-add">
+    <input id="proj-name" type="text" placeholder="New project" spellcheck="false" autocomplete="off">
+    <button class="primary sm" type="submit">Add</button>
+  </form>
+</aside>
+
+<!-- archive: everything that has left the board -->
+<aside class="panel" id="archive" hidden role="dialog" aria-modal="true" aria-label="Archive">
+  <header class="panel-head">
+    <h2>Archive</h2>
+    <button class="icon" data-close></button>
+  </header>
+  <div class="panel-body" id="arch-list"></div>
+  <footer class="panel-foot arch-foot">
+    <span class="arch-n" id="arch-n"></span>
+    <span class="grow"></span>
+    <button class="ghost danger" id="arch-empty" hidden>Delete all</button>
+  </footer>
+</aside>
+
+<!-- menu -->
+<div class="menu" id="menu" hidden>
+  <button data-act="projects">Projects<kbd>P</kbd></button>
+  <button data-act="archive">Archive<kbd>A</kbd></button>
+  <button data-act="theme">Toggle theme<kbd>T</kbd></button>
+  <hr>
+  <button data-act="addcol">Add stage</button>
+  <button data-act="archive-last" id="act-archive-last">Archive finished</button>
+  <hr>
+  <button data-act="export">Export backup</button>
+  <button data-act="import">Import backup</button>
+</div>
+
+<div class="toast" id="toast" hidden>
+  <span id="toast-msg"></span>
+  <button id="toast-undo">Undo</button>
+</div>
+
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

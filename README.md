@@ -1,0 +1,104 @@
+# board
+
+A personal kanban that runs from a single folder of files. No install, no build step, no server, no account, no network — download it, open `index.html` in your browser, and start typing.
+
+![the board](docs/shots/board.png)
+
+It looks and moves like a polished app because the details are tuned by hand: cards lift and tilt when you drag them and the others step aside to make room, typing a card and clicking away just saves it, everything has an undo, and dark mode is a keystroke away. Vanilla HTML/CSS/JS, ~3,500 lines, zero dependencies.
+
+![dark mode](docs/shots/dark.png)
+
+## Try it in 30 seconds
+
+```bash
+git clone https://github.com/YOURNAME/board.git   # or Code → Download ZIP
+open board/index.html                             # macOS — or just double-click it
+```
+
+That's it. The board lives in that browser's `localStorage`; nothing ever leaves your machine.
+
+## Make it feel like an app
+
+The board is happiest as its own window, pinned to your dock or taskbar:
+
+- **Chrome / Edge**: open the board, then **⋮ → Cast, save and share → Create shortcut…** (on some versions: *More tools → Create shortcut*), tick **Open as window**. You get a chromeless window and a dock icon.
+- Or launch it that way directly: `open -na "Google Chrome" --args --app="file:///path/to/board/index.html"` (macOS) / `chrome --app=file:///path/to/board/index.html` (Linux/Windows).
+- Or make it your morning start page: browser settings → *On startup* → open the board's URL.
+
+## What it does
+
+- **Capture fast.** Click `+` on any stage (or press `N`) and type. Enter files the card and keeps the field open for the next thought; clicking anywhere else saves what you typed — words are never silently lost. Esc is the only way to throw a draft away.
+- **Drag that feels physical.** Cards lift with a shadow and a tilt that follows your hand; neighbours animate out of the way; the drop flies into place. Respects reduced-motion.
+- **Projects with color.** Filter chips across the top, a color-coded edge on every card. Drag projects to reorder them — that order carries into the report and the export.
+- **A weekly report your team can actually read.** One key (`R`) shows everything created or moved that week, Monday to Sunday. Tick what belongs, export clean Markdown — only finished work, grouped by project, title only.
+- **Made for terminal-agent workflows.** Every card can hold the resume command your coding agent printed (`claude --resume …`, `codex resume …`). Click it on the card and it's on your clipboard; copy one from a terminal and **paste it onto the board** to start a card with the session attached.
+- **Nothing is one click from gone.** The board archives; only the archive deletes, behind a two-step confirm. Deleting a project or clearing cards never damages past weekly reports.
+
+![weekly report](docs/shots/report.png)
+
+## The weekly report
+
+`R` opens the week — every card **created** or **moved to another stage**, grouped by project, with the route it took and an editable day stamp (move a row to another day and it hops to that week's report). Untick anything; the export is whatever is ticked.
+
+The exported Markdown is deliberately narrower than the view: only ticked cards that **ended the week in the done stage**, grouped by project, title only — no routes, no counts, and cards without a project stay out. It reads like a changelog, not a log file:
+
+```markdown
+# Progress — 10–16 Aug 2026
+
+## Website
+- Onboarding tour v2
+
+## API
+- Rate limiting for the public API
+- Invoice PDF export
+```
+
+Weeks run Monday–Sunday. On Monday morning the report opens on the week that just ended, ready to send.
+
+## Keys
+
+| | |
+|---|---|
+| `N` | new task |
+| `R` | weekly report |
+| `P` | projects |
+| `A` | archive |
+| `/` or `⌘K` | search |
+| `T` | light / dark |
+| `⌘V` | paste a resume command as a new card |
+| `Esc` | close whatever is open |
+| `⌥` + arrows | move the focused card between stages or up and down |
+
+Stage names are editable in place — click one and type. Stages can be added and removed; a stage can only be deleted once it's empty.
+
+## Scope, honestly
+
+This is a **single-person, single-browser** tool by design. State lives in `localStorage` on one machine — that's what makes it install-free and instant. It is not optimized for phones, and there's no sync or team sharing. Those are natural ways to extend it (a mobile layout, an optional sync backend, shared boards) and PRs are welcome — but the core promise stays: open a file, get a board.
+
+Practical notes:
+
+- **Back up occasionally.** `⋯ → Export backup` writes the whole board as JSON; `Import backup` restores it. A cleared browser is a cleared board.
+- **Multiple boards:** open with `?ns=<name>` (e.g. `index.html?ns=writing`) and you get a separate board with its own storage. Also handy as a scratch board.
+
+## Tests
+
+```bash
+node --test tests/core.test.js     # 51 unit tests, no dependencies
+```
+
+They cover the parts that are easy to get silently wrong: calendar dates across DST, Monday–Sunday week boundaries across month and year ends, report aggregation, markdown output, re-dating guards, and storage migration.
+
+Then open `tests/dom.test.html` in Chrome for 21 interaction tests — they drive the real app in an iframe (drag a card, chain the composer, generate a report, undo) and report pass/fail in the page title, against a `?ns=test` board that never touches your data.
+
+## Files
+
+```
+index.html   markup
+styles.css   design tokens + every component
+core.js      pure logic: dates, weeks, report aggregation, markdown, storage migration
+app.js       the app: rendering, drag, editor, projects, report
+```
+
+## License
+
+[MIT](LICENSE)

@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>board — interaction tests</title>
+<style>
+  body { font: 14px/1.6 "Avenir Next", system-ui, sans-serif; margin: 0; padding: 28px 32px; background: #F1F0F5; color: #191722; }
+  h1 { font-size: 15px; letter-spacing: .18em; text-transform: uppercase; font-family: "SF Mono", ui-monospace, monospace; font-weight: 500; margin: 0 0 4px; }
+  #sum { font: 400 12px/1 "SF Mono", ui-monospace, monospace; color: #6B6779; margin-bottom: 20px; }
+  ol { margin: 0; padding: 0; list-style: none; }
+  li { padding: 5px 0; border-bottom: 1px solid #E3E1EB; font-size: 13.5px; }
+  li b { font: 500 11px "SF Mono", ui-monospace, monospace; letter-spacing: .08em; margin-right: 10px; }
+  .pass b { color: #2E7D5B; }
+  .fail { color: #C93B58; }
+  .fail b { color: #C93B58; }
+  .why { display: block; font: 400 12px/1.5 "SF Mono", ui-monospace, monospace; color: #C93B58; padding-left: 34px; }
+  iframe { position: fixed; right: 20px; bottom: 20px; width: 900px; height: 560px; border: 1px solid #E3E1EB; border-radius: 10px; background: #fff; transform: scale(.5); transform-origin: bottom right; }
+</style>
+</head>
+<body>
+
+<h1>board — interaction tests</h1>
+<p id="sum">running…</p>
+<ol id="out"></ol>
+
+<iframe id="app" src="../index.html?ns=test"></iframe>
+
+<script>
+/* Drives the real app in an iframe. Uses ?ns=test so it can never touch a real board.
+   Open this file in Chrome; the title and the list below report pass/fail. */
+
+const results = [];
+const out = document.getElementById('out');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function record(name, error) {
+  results.push({ name, ok: !error, error: error ? String(error.message || error) : null });
+  const li = document.createElement('li');
+  li.className = error ? 'fail' : 'pass';
+  li.innerHTML = `<b>${error ? 'FAIL' : 'PASS'}</b>${name}` + (error ? `<span class="why">${String(error.message || error)}</span>` : '');
+  out.append(li);
+}
+
+async function test(name, fn) {
+  try { await fn(); record(name); }
+  catch (err) { record(name, err); }
+}
+
+function assert(cond, msg) { if (!cond) throw new Error(msg || 'assertion failed'); }
+function eq(actual, expected, msg) {
+  if (actual !== expected) throw new Error(`${msg || ''} expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+}
+
+const frame = document.getElementById('app');
+let W, D;
+
+async function reload() {
+  frame.contentWindow.location.reload();
+  await new Promise(r => frame.addEventListener('load', r, { once: true }));
+  W = frame.contentWindow;
+  D = W.document;
+  await sleep(60);
+}
+
+/** Wipe the test board and reload the app fresh.
+    Reloads first so a debounced save from the previous test cannot land
+    after the wipe and resurrect the old board. */
+async function reset() {
+  await reload();
+  W.localStorage.removeItem('board.v2.test');
+  await reload();
+}
+
+const cards = () => [...D.querySelectorAll('.card')];
+const cardTitles = col => [...D.querySelectorAll('.col')][col].querySelectorAll('.card h3');
+const colOf = title => {
+  const card = cards().find(c => c.querySelector('h3').textContent === title);
+  return card ? card.closest('.col').querySelector('.col-name').textContent : null;
+};
+
+/** Open the report on the current week. On Mondays openReport shows the week
+    that just ended, which would hide the activity these tests create today. */
+async function openThisWeek() {
+  W.openReport();
+  await sleep(40);
+  const monday = W.BoardCore.mondayOf(W.BoardCore.ymd());
+  if (W.__board.repWeek !== monday) {
+    W.__board.repWeek = monday;
+    W.renderReport(true);
+    await sleep(30);
+  }
+}
+
+async function drag(title, targetColIndex) {
+  const card = cards().find(c => c.querySelector('h3').textContent === title);
+  const target = [...D.querySelectorAll('.col')][targetColIndex];
+  const r = card.getBoundingClientRect();
+  const t = target.getBoundingClientRect();
+  const P = (type, x, y) => new W.PointerEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0, isPrimary: true });
+  card.dispatchEvent(P('pointerdown', r.left + 40, r.top + 15));
+  D.dispatchEvent(P('pointermove', r.left + 46, r.top + 25));
+  D.dispatchEvent(P('pointermove', t.left + t.width / 2, t.top + 120));
+  await sleep(30);
+  D.dispatchEvent(P('pointerup', t.left + t.width / 2, t.top + 120));
+  await sleep(700); // let the drop flight land and clean up after itself
+}
+
+frame.addEventListener('load', async function run() {
+  frame.removeEventListener('load', run);
+  W = frame.contentWindow;
+  D = W.document;
+  await sleep(80);
+
+  /* ── the board itself ───────────────────────────────── */
+
+  await test('a fresh board opens with four stages and one demo card', async () => {
+    await reset();
+    eq(D.querySelectorAll('.col:not(.ghost-col)').length, 4, 'stage count');
+    eq(cards().length, 1, 'card count');
+    assert(D.querySelector('.card .chip'), 'the demo card shows a session line');
+  });
+
+  await test('the demo card carries a resume command, and clicking its line copies it', async () => {
+    let copied = null;
+    W.navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };
+    D.querySelector('.card .chip').click();
+    await sleep(40);
+    assert(/^claude --resume /.test(copied), `copied ${JSON.stringify(copied)}`);
+  });
+
+  await test('adding a task puts it on the board and logs a created event', async () => {
+    await reset();
+    const before = W.__board.state.events.length;
+    W.addTask({ title: 'Wire up webhooks', columnId: W.__board.state.columns[0].id });
+    await sleep(40);
+    assert(cards().some(c => c.querySelector('h3').textContent === 'Wire up webhooks'), 'card is rendered');
+    eq(W.__board.state.events.length, before + 1, 'one event logged');
+    const e = W.__board.state.events.at(-1);
+    eq(e.type, 'created');
+    eq(e.to, 'Inbox');
+    eq(e.day, W.BoardCore.ymd(), 'stamped with today in Chile');
+  });
+
+  await test('the quick composer: Enter chains, leaving saves, Esc discards', async () => {
+    await reset();
+    const col = W.__board.state.columns[0].id;
+    W.openComposer(col);
+    await sleep(60);
+    const ta = () => D.querySelector('.composer textarea');
+
+    ta().value = 'First thought';
+    ta().dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await sleep(40);
+    assert(W.__board.state.tasks.some(t => t.title === 'First thought'), 'Enter created the card');
+    assert(ta(), 'composer stays open for the next one');
+
+    ta().value = 'Second thought';
+    ta().dispatchEvent(new W.Event('blur'));
+    await sleep(40);
+    assert(W.__board.state.tasks.some(t => t.title === 'Second thought'), 'leaving saved the draft');
+    assert(!D.querySelector('.composer'), 'composer closed');
+
+    W.openComposer(col);
+    await sleep(60);
+    ta().value = 'Never mind';
+    ta().dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(40);
+    assert(!W.__board.state.tasks.some(t => t.title === 'Never mind'), 'Esc still throws the draft away');
+    assert(!D.querySelector('.composer'), 'composer closed after Esc');
+  });
+
+  /* ── drag ───────────────────────────────────────────── */
+
+  await test('dragging a card to another stage moves it and logs the move', async () => {
+    await reset();
+    W.addTask({ title: 'Ship the thing', columnId: W.__board.state.columns[0].id });
+    await sleep(40);
+    const before = W.__board.state.events.length;
+    await drag('Ship the thing', 2); // Waiting
+    eq(colOf('Ship the thing'), 'Waiting', 'card landed in Waiting');
+    eq(W.__board.state.events.length, before + 1, 'exactly one move logged');
+    const e = W.__board.state.events.at(-1);
+    eq(e.type, 'moved'); eq(e.from, 'Inbox'); eq(e.to, 'Waiting');
+  });
+
+  await test('a drag leaves no ghost or placeholder behind', () => {
+    eq(D.querySelectorAll('.card-ghost-wrap').length, 0, 'ghosts');
+    eq(D.querySelectorAll('.card.dragging-src').length, 0, 'placeholders');
+    eq(D.querySelectorAll('.col-body.over').length, 0, 'drop highlights');
+  });
+
+  await test('a drag survives a reload', async () => {
+    await reload();
+    eq(colOf('Ship the thing'), 'Waiting');
+  });
+
+  await test('dropping a card back where it started logs nothing', async () => {
+    const before = W.__board.state.events.length;
+    await drag('Ship the thing', 2); // same column
+    eq(W.__board.state.events.length, before, 'no event');
+  });
+
+  /* ── paste to capture ───────────────────────────────── */
+
+  await test('pasting a resume command onto the board starts a card with it', async () => {
+    const paste = text => {
+      const dt = new W.DataTransfer();
+      dt.setData('text/plain', text);
+      D.dispatchEvent(new W.ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    };
+    paste('claude --resume 2d2bb76b-e6df-46c5-b742-8eab8c3c7303');
+    await sleep(40);
+    eq(D.getElementById('editor').hidden, false, 'editor opened');
+    eq(D.getElementById('f-session').value, 'claude --resume 2d2bb76b-e6df-46c5-b742-8eab8c3c7303', 'session filled');
+    eq(D.activeElement.id, 'f-title', 'caret waiting in the title');
+    W.closeEditor();
+
+    paste('just some notes I copied');
+    await sleep(40);
+    eq(D.getElementById('editor').hidden, true, 'unrelated text is ignored');
+  });
+
+  /* ── the weekly report ──────────────────────────────── */
+
+  await test('the report lists what was created and moved this week', async () => {
+    await openThisWeek();
+    const rows = [...D.querySelectorAll('.rep-row')];
+    const row = rows.find(r => r.textContent.includes('Ship the thing'));
+    assert(row, `listed; rows were ${rows.map(r => r.textContent).join(' | ')}`);
+    assert(row.classList.contains('on'), 'ticked by default');
+    assert(rows.some(r => r.textContent.includes('Drag me')), 'the starter card is listed too');
+  });
+
+  await test('its markdown lists finished cards under their projects, nothing else', async () => {
+    assert(!W.reportMarkdown().includes('Ship the thing'), 'not exported while still in Waiting');
+    W.closeReport();
+    W.__board.state.projects.push({ id: 'pr', name: 'ops', color: '#8FB8FF' });
+    W.__board.state.tasks.find(t => t.title === 'Ship the thing').projectId = 'pr';
+    await drag('Ship the thing', 3); // Done
+    await openThisWeek();
+    const md = W.reportMarkdown();
+    assert(md.startsWith('# Progress — '), md.slice(0, 40));
+    assert(md.includes('## ops\n- Ship the thing'), md);
+    assert(!md.includes('finished'), 'no summary line');
+    assert(!md.includes('→'), 'no stage → stage routes in the export');
+    assert(!md.includes('Drag me'), 'unfinished and unassigned cards stay out');
+  });
+
+  await test('unticking a row drops it from the markdown', async () => {
+    const row = () => [...D.querySelectorAll('.rep-row')].find(r => r.textContent.includes('Ship the thing'));
+    row().click();
+    await sleep(30);
+    assert(!W.reportMarkdown().includes('Ship the thing'), 'excluded once unticked');
+    row().click(); // put it back
+    await sleep(30);
+    assert(W.reportMarkdown().includes('Ship the thing'), 'back when ticked again');
+  });
+
+  await test('a round trip within the week is listed but unticked, and stays out of the markdown', async () => {
+    W.closeReport();
+    await reset();
+    W.addTask({ title: 'Went and came back', columnId: W.__board.state.columns[0].id });
+    await sleep(40);
+    // created in an earlier week, so this week is pure movement
+    W.__board.state.events.find(e => e.type === 'created' && e.title === 'Went and came back')
+      .day = W.BoardCore.addDays(W.BoardCore.ymd(), -14);
+    await drag('Went and came back', 2); // Inbox → Waiting
+    await drag('Went and came back', 0); // Waiting → Inbox, net zero
+    await openThisWeek();
+    const row = [...D.querySelectorAll('.rep-row')].find(r => r.textContent.includes('Went and came back'));
+    assert(row, 'still listed');
+    assert(row.classList.contains('zero'), 'marked as a round trip');
+    assert(!row.classList.contains('on'), 'not ticked');
+    assert(!W.reportMarkdown().includes('Went and came back'), 'kept out of the report');
+    assert(row.textContent.includes('↺'), 'shown as a return, not as Inbox → Inbox');
+  });
+
+  await test('re-dating a row moves it into another week', async () => {
+    const entry = W.__board.repEntries.find(e => e.title === 'Went and came back');
+    const lastWeek = W.BoardCore.addDays(W.__board.repWeek, -3);
+    W.BoardCore.rewriteDay(W.__board.state.events, entry, lastWeek);
+    W.renderReport(false);
+    await sleep(30);
+    assert(!W.__board.repEntries.some(e => e.title === 'Went and came back'), 'gone from this week');
+    W.__board.repWeek = W.BoardCore.addDays(W.__board.repWeek, -7);
+    W.renderReport(true);
+    await sleep(30);
+    assert(W.__board.repEntries.some(e => e.title === 'Went and came back'), 'present in the previous week');
+  });
+
+  await test('every week with activity is listed, newest first', () => {
+    const weeks = W.BoardCore.weeksWithActivity(W.__board.state.events, W.BoardCore.ymd());
+    assert(weeks.length >= 2, `expected at least 2 weeks, got ${weeks.length}`);
+    assert(weeks[0].monday > weeks[1].monday, 'newest first');
+  });
+
+  /* ── the rest of the board ──────────────────────────── */
+
+  await test('deleting a task can be undone', async () => {
+    W.closeReport();
+    await reset();
+    W.addTask({ title: 'Delete me', columnId: W.__board.state.columns[0].id });
+    await sleep(40);
+    W.snapshot();
+    W.__board.state.tasks = W.__board.state.tasks.filter(t => t.title !== 'Delete me');
+    W.render();
+    assert(!cards().some(c => c.querySelector('h3').textContent === 'Delete me'), 'gone');
+    W.undo();
+    await sleep(40);
+    assert(cards().some(c => c.querySelector('h3').textContent === 'Delete me'), 'back');
+  });
+
+  await test('a project filters the board and groups the report', async () => {
+    W.__board.state.projects.push({ id: 'px', name: 'crm', color: '#8FB8FF' });
+    W.__board.state.tasks.find(t => t.title === 'Delete me').projectId = 'px';
+    W.addTask({ title: 'Unassigned work', columnId: W.__board.state.columns[0].id });
+    await sleep(30);
+    W.__board.state.filter = 'px';
+    W.render();
+    await sleep(30);
+    eq(cards().length, 1, 'only the crm card shows');
+    W.__board.state.filter = null;
+    W.render();
+    await openThisWeek();
+    const groups = [...D.querySelectorAll('.rep-group')].map(g => g.textContent);
+    assert(groups.includes('crm'), `groups: ${groups}`);
+    assert(groups.includes('No project'), `groups: ${groups}`);
+    W.closeReport();
+  });
+
+  await test('projects can be reordered by their drag handle, and the order sticks', async () => {
+    W.__board.state.projects.push({ id: 'py', name: 'aaa', color: '#7FD1AE' });
+    W.openProjects();
+    await sleep(30);
+    const rows = () => [...D.querySelectorAll('#proj-list .prow')];
+    eq(rows().map(r => r.querySelector('input').value).join(','), 'crm,aaa', 'panel lists board order');
+
+    const handle = rows()[1].querySelector('.grab');
+    const top = rows()[0].getBoundingClientRect();
+    const P = (type, x, y) => new W.PointerEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0, isPrimary: true });
+    handle.dispatchEvent(P('pointerdown', top.left + 8, top.bottom + 20));
+    D.dispatchEvent(P('pointermove', top.left + 8, top.top + 2)); // above the first row's midpoint
+    await sleep(20);
+    D.dispatchEvent(P('pointerup', top.left + 8, top.top + 2));
+    await sleep(30);
+
+    eq(W.__board.state.projects.map(p => p.name).join(','), 'aaa,crm', 'state follows the drop');
+    await sleep(200); // save is debounced
+    eq(JSON.parse(W.localStorage.getItem('board.v2.test')).projects[0].name, 'aaa', 'persisted');
+    W.closeProjects();
+  });
+
+  await test('search narrows the board without touching the data', async () => {
+    const total = W.__board.state.tasks.length;
+    D.getElementById('q').value = 'unassigned';
+    D.getElementById('q').dispatchEvent(new W.Event('input'));
+    await sleep(40);
+    eq(cards().length, 1, 'one match');
+    eq(W.__board.state.tasks.length, total, 'nothing deleted');
+    D.getElementById('q').value = '';
+    D.getElementById('q').dispatchEvent(new W.Event('input'));
+    await sleep(40);
+    eq(cards().length, total, 'all back');
+  });
+
+  await test('the theme toggles and is remembered', async () => {
+    const first = D.documentElement.dataset.theme;
+    W.toggleTheme();
+    assert(D.documentElement.dataset.theme !== first, 'changed');
+    await sleep(200);
+    eq(JSON.parse(W.localStorage.getItem('board.v2.test')).theme, D.documentElement.dataset.theme, 'persisted');
+    W.toggleTheme();
+  });
+
+  await test('a stage can be renamed without rewriting past reports', async () => {
+    const before = W.__board.state.events.map(e => e.to);
+    W.__board.state.columns[0].name = 'Someday';
+    W.save();
+    W.render();
+    await sleep(30);
+    const after = W.__board.state.events.map(e => e.to);
+    eq(JSON.stringify(after), JSON.stringify(before), 'history untouched');
+  });
+
+  /* ── done ───────────────────────────────────────────── */
+
+  W.localStorage.removeItem('board.v2.test');
+  const failed = results.filter(r => !r.ok);
+  const sum = `${results.length - failed.length} passed · ${failed.length} failed`;
+  document.getElementById('sum').textContent = sum;
+  document.title = failed.length ? `FAIL ${sum}` : `PASS ${sum}`;
+  window.__results = results;
+  window.__done = true;
+});
+</script>
+</body>
+</html>
