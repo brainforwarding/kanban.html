@@ -1,4 +1,4 @@
-# board
+# kanban.html
 
 A personal kanban that runs from a single folder of files. No install, no build step, no server, no account, no network — download it, open `index.html` in your browser, and start typing.
 
@@ -11,8 +11,8 @@ It looks and moves like a polished app because the details are tuned by hand: ca
 ## Try it in 30 seconds
 
 ```bash
-git clone https://github.com/YOURNAME/board.git   # or Code → Download ZIP
-open board/index.html                             # macOS — or just double-click it
+git clone https://github.com/brainforwarding/kanban.html.git   # or Code → Download ZIP
+open kanban.html/index.html                                    # macOS — or just double-click it
 ```
 
 That's it. The board lives in that browser's `localStorage`; nothing ever leaves your machine.
